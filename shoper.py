@@ -1,62 +1,100 @@
-import matplotlib.pyplot as plt
+import cv2
+import pytesseract
+import numpy as np
 import os
-import ast
 
-# Function to get the absolute path of a file
-def get_file_path(filename):
-    current_dir = os.path.dirname(os.path.abspath(_file_))
-    return os.path.join(current_dir, filename)
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
-def validate_summary_data(summary):
-    if not isinstance(summary, dict):
-        raise ValueError("Expected the summary data to be a dictionary.")
-    if "items" not in summary:
-        raise ValueError("Missing 'items' key in summary data.")
-    if not isinstance(summary["items"], list):
-        raise ValueError("The 'items' key should hold a list.")
-    for item in summary["items"]:
-        if not all(key in item for key in ("name", "price")):
-            raise ValueError("Each item needs to have both 'name' and 'price'.")
 
-def visualize_sales(summary):
-    validate_summary_data(summary)
-    item_names = [item["name"] for item in summary["items"]]
-    item_prices = [float(item["price"]) for item in summary["items"]]
+# Preprocess the image (grayscale, binarization, etc.)
+def preprocess_image(image_path):
+    img = cv2.imread(image_path)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    if not item_names or not item_prices:
-        print("No items found in the summary. Skipping visualization.")
-        return
+    # Apply adaptive thresholding
+    binary = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
+    )
 
-    plt.figure(figsize=(10, 6))
-    plt.bar(item_names, item_prices, color='blue')
-    plt.xlabel('Items')
-    plt.ylabel('Prices (Currency)')
-    plt.title('Sales Summary')
-    plt.xticks(rotation=45, ha="right")
+    # Apply morphological operations to remove noise
+    kernel = np.ones((2, 2), np.uint8)
+    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
 
-    # Save the graph to a file
-    graph_folder = os.path.join(os.path.dirname(os.path.abspath(_file_)), "visualization")
-    os.makedirs(graph_folder, exist_ok=True)
-    plt.savefig(os.path.join(graph_folder, "sales_summary.png"))
-    plt.show()
+    binary = cv2.dilate(binary, kernel, iterations=1)
 
-def main():
-    summary_file_path = get_file_path(os.path.join("summary", "receipt_summary.txt"))
+    # Apply Gaussian Blur
+    blurred = cv2.GaussianBlur(binary, (5, 5), 0)
 
-    if not os.path.exists(summary_file_path):
-        raise FileNotFoundError(f"Cannot find the file {summary_file_path}. Please ensure the summary is generated.")
+    cv2.imshow('Grayscale Image', gray)
+    cv2.imshow('Binarized Image', binary)
+    cv2.imshow('Blurred Image', blurred)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
-    with open(summary_file_path, "r") as file:
-        try:
-            summary = ast.literal_eval(file.read())
-        except (SyntaxError, ValueError) as e:
-            raise ValueError("Error parsing the summary file. Ensure it is in valid dictionary format.") from e
+    return blurred
 
-    print("Loaded Summary:", summary)
+def extract_text(image):
+    text = pytesseract.image_to_string(image)
+    return text
 
-    # Generate the sales visualization
-    visualize_sales(summary)
+def save_text_to_file(text, output_file):
+    summary_folder = os.path.join(os.path.dirname(os.path.abspath(_file_)), "summary")
+    os.makedirs(summary_folder, exist_ok=True)
+    with open(os.path.join(summary_folder, output_file), "w") as file:
+        file.write(text)
+    print(f"Extracted text saved to {os.path.join(summary_folder, output_file)}")
 
+def summarize_receipt(text):
+    lines = text.split("\n")
+    items = []
+    subtotal = 0.0
+    for line in lines:
+        parts = line.split()
+        if len(parts) >= 3 and parts[-1].replace('.', '', 1).isdigit():
+            price = parts[-1]
+            quantity = parts[-2]
+            name = ' '.join(parts[:-2])
+            items.append({
+                "name": name.strip(),
+                "price": price.strip()
+            })
+        elif "Sub Total" in line:
+            try:
+                subtotal = float(line.split()[-1])
+            except ValueError:
+                print(f"Unable to parse subtotal from line: {line}")
+
+    summary = {
+        "items": items,
+        "subtotal": subtotal,
+    }
+
+    return summary
+
+def save_summary_to_file(summary, output_file):
+    summary_folder = os.path.join(os.path.dirname(os.path.abspath(_file_)), "summary")
+    os.makedirs(summary_folder, exist_ok=True)
+    with open(os.path.join(summary_folder, output_file), "w") as file:
+        file.write(str(summary))
+    print(f"Summary saved to {os.path.join(summary_folder, output_file)}")
+
+
+# Main function to process the receipt and save both text and summary
+def main(image_path):
+    # Process the image
+    processed_image = preprocess_image(image_path)
+
+    # Extract text
+    text = extract_text(processed_image)
+    print("Extracted Text:\n", text) 
+
+    # Save the extracted text
+    save_text_to_file(text, "receipt_text.txt")
+
+    # Summarize the receipt and save the summary
+    summary = summarize_receipt(text)
+    save_summary_to_file(summary, "receipt_summary.txt")
 
 if _name_ == "_main_":
-    main()
+    image_path = 'Recept-II.png'
+    main(image_path)
