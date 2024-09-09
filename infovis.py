@@ -36,3 +36,8 @@ def main():
 
     # Generate the sales visualization
     visualize_sales(summary)
+
+
+# Entry point of the program
+if __name__ == "__main__":
+    main()
