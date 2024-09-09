@@ -1,70 +1,62 @@
-import cv2
-import pytesseract
-import numpy as np
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+import matplotlib.pyplot as plt
+import os
+import ast
 
-def preprocess_image(image_path):
-    # Read the image
-    img = cv2.imread(image_path)
+# Function to get the absolute path of a file
+def get_file_path(filename):
+    current_dir = os.path.dirname(os.path.abspath(_file_))
+    return os.path.join(current_dir, filename)
 
-    # Convert to grayscale
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    cv2.imshow('Grayscale Image', gray)
+def validate_summary_data(summary):
+    if not isinstance(summary, dict):
+        raise ValueError("Expected the summary data to be a dictionary.")
+    if "items" not in summary:
+        raise ValueError("Missing 'items' key in summary data.")
+    if not isinstance(summary["items"], list):
+        raise ValueError("The 'items' key should hold a list.")
+    for item in summary["items"]:
+        if not all(key in item for key in ("name", "price")):
+            raise ValueError("Each item needs to have both 'name' and 'price'.")
 
-    # Binarize the image (thresholding)
-    _, binary = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)
-    cv2.imshow('Binarized Image', binary)
+def visualize_sales(summary):
+    validate_summary_data(summary)
+    item_names = [item["name"] for item in summary["items"]]
+    item_prices = [float(item["price"]) for item in summary["items"]]
 
-    # Optional: Denoise or blur the image if needed
-    blurred = cv2.GaussianBlur(binary, (5, 5), 0)
-    cv2.imshow('Blurred Image', blurred)
+    if not item_names or not item_prices:
+        print("No items found in the summary. Skipping visualization.")
+        return
 
-    # Show images for debugging purposes
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    plt.figure(figsize=(10, 6))
+    plt.bar(item_names, item_prices, color='blue')
+    plt.xlabel('Items')
+    plt.ylabel('Prices (Currency)')
+    plt.title('Sales Summary')
+    plt.xticks(rotation=45, ha="right")
 
-    return blurred
+    # Save the graph to a file
+    graph_folder = os.path.join(os.path.dirname(os.path.abspath(_file_)), "visualization")
+    os.makedirs(graph_folder, exist_ok=True)
+    plt.savefig(os.path.join(graph_folder, "sales_summary.png"))
+    plt.show()
 
+def main():
+    summary_file_path = get_file_path(os.path.join("summary", "receipt_summary.txt"))
 
-def extract_text(image):
-    # OCR the image using Tesseract
-    text = pytesseract.image_to_string(image)
-    return text
+    if not os.path.exists(summary_file_path):
+        raise FileNotFoundError(f"Cannot find the file {summary_file_path}. Please ensure the summary is generated.")
 
+    with open(summary_file_path, "r") as file:
+        try:
+            summary = ast.literal_eval(file.read())
+        except (SyntaxError, ValueError) as e:
+            raise ValueError("Error parsing the summary file. Ensure it is in valid dictionary format.") from e
 
-def summarize_receipt(text):
-    # Example of basic parsing logic (can be expanded)
-    lines = text.split("\n")
-    items = []
-    subtotal = 0
-    for line in lines:
-        if line.startswith("#"):  # Item line starts with #
-            item_data = line.split("\t")  # Example: item name, quantity, price
-            items.append(item_data)
-        if "Sub Total" in line:
-            subtotal = float(line.split()[-1])
+    print("Loaded Summary:", summary)
 
-    summary = {
-        "items": items,
-        "subtotal": subtotal,
-    }
-    return summary
-
-
-def main(image_path):
-    # Process the image
-    processed_image = preprocess_image(image_path)
-
-    # Extract text
-    text = extract_text(processed_image)
-    print("Extracted Text:\n", text)
-
-    # Summarize the receipt
-    summary = summarize_receipt(text)
-    print("\nReceipt Summary:")
-    print("Subtotal:", summary['subtotal'])
+    # Generate the sales visualization
+    visualize_sales(summary)
 
 
-if __name__ == "__main__":
-    image_path = 'Recept-I.png'
-    main(image_path)
+if _name_ == "_main_":
+    main()
